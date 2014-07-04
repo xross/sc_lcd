@@ -17,16 +17,16 @@ lcd_fast_write:
 	set cp, r0
 	ldw r0, cp[0]
 
-	ldc r1, 1
+	//ldc r1, 1
 	out res[r2], r0
 
 	shr r0, r0, 16
-	out res[r3], r1
-	ldc r1, 0
+	//out res[r3], r1
+	//ldc r1, 0
 	out res[r2], r0
 
 	#include "lcd_generated.inc"
-	out res[r3], r1
+	//out res[r3], r1
 
 	set cp, r11
 	retsp 0

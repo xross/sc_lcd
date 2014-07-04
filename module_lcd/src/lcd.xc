@@ -4,11 +4,17 @@
 #include <print.h>
 #include <stdlib.h>
 
+#ifndef DRAW_HEIGHT 
+#define DRAW_HEIGHT LCD_HEIGHT
+#endif
+
 #define LDW(dst, mem, ind) asm("ldw %0, %1[%2]" : "=r"(dst) : "r"(mem), "r"(ind))
 
 void lcd_init(chanend c_lcd) {
   outct(c_lcd, XS1_CT_END);
 }
+
+//#define DRAW_WIDTH 320
 
 #pragma unsafe arrays
 void lcd_server(chanend c_lcd, struct lcd_ports &p) {
@@ -20,8 +26,9 @@ void lcd_server(chanend c_lcd, struct lcd_ports &p) {
   set_port_mode_clock(p.lcd_clk);
 
   set_port_clock(p.lcd_rgb, p.clk_lcd);
-  set_port_clock(p.lcd_data_enabled, p.clk_lcd);
+//  set_port_clock(p.lcd_data_enabled, p.clk_lcd);
 
+    configure_out_port_strobed_master(p.lcd_rgb, p.lcd_data_enabled, p.clk_lcd, 0);
   set_port_inv(p.lcd_clk);
 
 #if LCD_HOR_PULSE_WIDTH
@@ -34,15 +41,15 @@ void lcd_server(chanend c_lcd, struct lcd_ports &p) {
 
   start_clock(p.clk_lcd);
 
-  chkct(c_lcd, XS1_CT_END);
+    chkct(c_lcd, XS1_CT_END);
   outct(c_lcd, XS1_CT_END);
 #if LCD_VERT_PULSE_WIDTH
-  partout(p.lcd_vsync, 1, 1);
+  //partout(p.lcd_vsync, 1, 1);
 #endif
 #if LCD_HOR_PULSE_WIDTH
-  partout(p.lcd_hsync, 1, 1);
+  //partout(p.lcd_hsync, 1, 1);
 #endif
-  p.lcd_data_enabled <: 0 @ time;
+  //p.lcd_data_enabled <: 0 @ time;
 
   time += 1000;
 
@@ -56,7 +63,7 @@ void lcd_server(chanend c_lcd, struct lcd_ports &p) {
     for (unsigned i = 0; i < LCD_VERT_PULSE_WIDTH; i++) {
 #if (LCD_HOR_PULSE_WIDTH > 0)
         partout_timed(p.lcd_hsync, LCD_HOR_PULSE_WIDTH + 1,
-            1 << LCD_HOR_PULSE_WIDTH, time);
+            0, time);
 #endif
       time += LCD_HSYNC_TIME;
     }
@@ -66,7 +73,7 @@ void lcd_server(chanend c_lcd, struct lcd_ports &p) {
 #if(LCD_HOR_PULSE_WIDTH)
       for(unsigned i=0;i<LCD_VERT_BACK_PORCH - LCD_VERT_PULSE_WIDTH;i++) {
         if (LCD_HOR_PULSE_WIDTH>0)
-        partout_timed(p.lcd_hsync, LCD_HOR_PULSE_WIDTH+1, 1<<LCD_HOR_PULSE_WIDTH, time);
+        partout_timed(p.lcd_hsync, LCD_HOR_PULSE_WIDTH+1, 0, time);
         time += LCD_HSYNC_TIME;
       }
 #else
@@ -76,43 +83,53 @@ void lcd_server(chanend c_lcd, struct lcd_ports &p) {
     for (int y = 0; y < LCD_HEIGHT; y++)
     {
 #if (LCD_HOR_PULSE_WIDTH>0)
-      partout_timed(p.lcd_hsync, LCD_HOR_PULSE_WIDTH+1, 1<<LCD_HOR_PULSE_WIDTH, time);
+      partout_timed(p.lcd_hsync, LCD_HOR_PULSE_WIDTH+1, 0, time);
 #endif
       time += LCD_HOR_BACK_PORCH;
 
-      ptr = inuint(c_lcd);
-      chkct(c_lcd, XS1_CT_END);
+        if(y < DRAW_HEIGHT)
+        {
+            ptr = inuint(c_lcd);
+            chkct(c_lcd, XS1_CT_END);
 
-#if LCD_FAST_WRITE==1
+#if  LCD_FAST_WRITE==1
 	  lcd_fast_write(ptr, time, p.lcd_rgb, p.lcd_data_enabled);
 	  time += LCD_WIDTH;
 #else
-	  LDW(x, ptr, 0);
+	    LDW(x, ptr, 0);
+	  p.lcd_rgb @ time <: x;
 
-	  p.lcd_data_enabled @ time <: 1;
-    p.lcd_rgb @ time <: x;
-
-#if LCD_USE_32_BIT_DATA_PORT==1
-    p.lcd_rgb  <: x>>16;
-#endif
 	  time += LCD_WIDTH;
-	  p.lcd_data_enabled @ time <: 0;
-
-	  for (unsigned i = 1; i < LCD_ROW_WORDS; i++) {
+	  for (unsigned i = 1; i < LCD_ROW_WORDS; i++) 
+      {
 		LDW(x, ptr, i);
 		p.lcd_rgb <: x;
-#if LCD_USE_32_BIT_DATA_PORT==1
-    p.lcd_rgb  <: x>>16;
-#endif
+        // HACK FOR 32 bit port
+       // x>>=16;
+        //p.lcd_rgb <: x;
 	  }
-#endif
       outct(c_lcd, XS1_CT_END);
+#endif
+    }
+    else
+    {
+	  p.lcd_rgb @ time <: 0;
+
+	  time += LCD_WIDTH;
+	  for (unsigned i = 1; i < LCD_ROW_WORDS; i++) 
+      {
+		LDW(x, ptr, i);
+		p.lcd_rgb <: 0;
+        // HACK FOR 32 bit port
+        //p.lcd_rgb <: 0;
+        }
+
+    }
       time += LCD_HOR_FRONT_PORCH;
     }
-
-    for(unsigned i=0;i<LCD_VERT_FRONT_PORCH;i++) {
+       for(unsigned i=0;i<LCD_VERT_FRONT_PORCH;i++) {
 #if (LCD_HOR_PULSE_WIDTH>0)
-      partout_timed(p.lcd_hsync, LCD_HOR_PULSE_WIDTH+1, 1<<LCD_HOR_PULSE_WIDTH, time);
+      partout_timed(p.lcd_hsync, LCD_HOR_PULSE_WIDTH+1, 0, time);
 #endif
       time += LCD_HSYNC_TIME;
     }
